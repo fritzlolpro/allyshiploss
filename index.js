@@ -5,7 +5,7 @@ const killboardUrl = "https://zkillboard.com";
 const gsfId = "1354830081";
 
 async function getAllyLoses(allyId) {
-  const url = `${killboardUrl}/api/losses/allianceID/${allyId}/`;
+  const url = `${killboardUrl}/api/losses/allianceID/${allyId}/pastSeconds/604800/`;
   const jsonFeed = await fetch(url)
     .then((bulk) => bulk.json())
     .catch((err) => console.error(err));
@@ -44,7 +44,6 @@ function sortLosses(obj) {
 
 async function getGoonLostShips() {
   const loses = await getAllyLoses(gsfId);
-  console.log(loses)
   const killmailIds = loses.map((loss) => {
     return { id: loss.killmail_id, hash: loss.zkb.hash };
   });
