@@ -4,24 +4,52 @@ const baseApiUrl = "https://esi.evetech.net/latest";
 const killboardUrl = "https://zkillboard.com";
 const gsfId = "1354830081";
 
-async function getAllyLoses(allyId) {
-  const url = `${killboardUrl}/api/losses/allianceID/${allyId}/pastSeconds/604800/`;
-  const jsonFeed = await fetch(url)
-    .then((bulk) => bulk.json())
-    .catch((err) => console.error(err));
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function getAllyLoses(allyId) {
+  let jsonFeed = [];
+  let page = 1;
+
+  const fetchPerPage = async (pageNumber) => {
+    await delay(1500 * (Math.random() + 1));
+    let data = {};
+    try {
+      const url = `${killboardUrl}/api/losses/allianceID/${allyId}/pastSeconds/604800/page/${pageNumber}/`;
+      console.log("fetching page" + pageNumber, url);
+      const result = await fetch(url);
+      data = await result.json().catch((error) => {
+        console.log(result);
+        throw new Error(`Error in to json in fpp: ${error}`);
+      });
+    } catch (error) {
+      console.error(error);
+    }
+    return data;
+  };
+
+  const refetch = async () => {
+    const result = await fetchPerPage(page);
+    if (result.length > 0) {
+      jsonFeed = [...jsonFeed, ...result];
+      page += 1;
+      if (page < 5) {
+        await refetch();
+      }
+    }
+  };
+
+  await refetch();
   return jsonFeed;
 }
 
 async function getKillmail(killId, killHash) {
   const url = `${baseApiUrl}/killmails/${killId}/${killHash}`;
-  const jsonFeed = await fetch(url)
-    .then((bulk) => bulk.json())
-    .catch((err) => console.error(err));
+  const result = await fetch(url);
+  const jsonFeed = await result.json();
   return jsonFeed;
 }
 
-function calculateShipsSumm(shipsArray) {
+function calculateItemsQuantity(shipsArray) {
   const result = {};
   shipsArray.forEach((element) => {
     if (result[element]) {
@@ -33,7 +61,7 @@ function calculateShipsSumm(shipsArray) {
   return result;
 }
 
-function sortLosses(obj) {
+function sortQuantityData(obj) {
   const sortedResult = Object.keys(obj)
     .map((key) => {
       return { key, losses: obj[key] };
@@ -59,13 +87,34 @@ async function getGoonLostShips() {
   return shipList;
 }
 
-async function main() {
+async function getItemInfo(itemId) {
+  const url = `${baseApiUrl}/universe/types/${itemId}`;
+  const jsonFeed = await fetch(url)
+    .then((bulk) => bulk.json())
+    .catch((err) => console.error(err));
 
-  const losses =  await getGoonLostShips();
-  const lossesQuantity = calculateShipsSumm(losses);
-  console.log(lossesQuantity)
-  const sortedLosses = sortLosses(lossesQuantity);
-  console.log(sortedLosses);
+  return jsonFeed;
 }
-main()
 
+async function applyNames(items) {
+  const itemsWithNames = await Promise.all(
+    items.map(async (item) => {
+      const itemData = await getItemInfo(item.key);
+      const name = itemData.name;
+      return {
+        ...item,
+        name,
+      };
+    })
+  );
+  return itemsWithNames;
+}
+
+async function main() {
+  const losses = await getGoonLostShips();
+  const lossesQuantity = calculateItemsQuantity(losses);
+  const sortedLosses = sortQuantityData(lossesQuantity);
+  const namedLosses = await applyNames(sortedLosses);
+  console.log(namedLosses);
+}
+main();
