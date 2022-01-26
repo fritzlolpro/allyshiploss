@@ -5,7 +5,8 @@ import { writeJsonToFile } from "./fileWriter.js";
 const baseApiUrl = "https://esi.evetech.net/latest";
 const killboardUrl = "https://zkillboard.com";
 const gsfId = "1354830081";
-const pageLimit = Infinity;
+//const pageLimit = Infinity;
+const pageLimit = 1;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -59,9 +60,9 @@ async function getKillmail(killId, killHash) {
   return jsonFeed;
 }
 
-function calculateItemsQuantity(shipsArray) {
+function calculateItemsQuantity(items) {
   const result = {};
-  shipsArray.forEach((element) => {
+  items.forEach((element) => {
     if (result[element]) {
       result[element] += 1;
     } else {
@@ -80,7 +81,7 @@ function sortQuantityData(obj) {
   return sortedResult;
 }
 
-async function getGoonLostShips() {
+async function getGoonLoses() {
   const loses = await getAllyLoses(gsfId);
   const killmailIds = loses.map((loss) => {
     return { id: loss.killmail_id, hash: loss.zkb.hash };
@@ -94,7 +95,8 @@ async function getGoonLostShips() {
   );
 
   const shipList = killList.map((kill) => kill?.victim?.ship_type_id);
-  return shipList;
+  const modulesList = killList.map((kill) => kill?.victim?.items);
+  return { shipList, modulesList };
 }
 
 async function getItemInfo(itemId) {
@@ -120,12 +122,61 @@ async function applyNames(items) {
   return itemsWithNames;
 }
 
+async function groupModulesByType(modulesList) {
+  const unicModules = {};
+  for (const moduleBatch of modulesList) {
+    for (const module of moduleBatch) {
+      const modulesDropped = module.quantity_dropped
+        ? module.quantity_dropped
+        : 0;
+
+      const modulesDestroyed = module.quantity_destroyed
+        ? module.quantity_destroyed
+        : 0;
+
+      const { item_type_id } = module;
+
+      let name = unicModules[item_type_id]?.name;
+
+      if (!name) {
+        const itemData = await getItemInfo(item_type_id);
+        name = itemData?.name;
+      }
+
+      unicModules[item_type_id] = {
+        item_type_id,
+        name,
+        quantity_destroyed: unicModules[item_type_id]
+          ? unicModules[item_type_id].quantity_destroyed + modulesDestroyed
+          : modulesDestroyed,
+        quantity_dropped: unicModules[item_type_id]
+          ? unicModules[item_type_id].quantity_dropped + modulesDropped
+          : modulesDropped,
+        positions: unicModules[item_type_id]?.positions
+          ? [...unicModules[item_type_id].positions, module.flag]
+          : [module.flag],
+      };
+    }
+  }
+
+  const sortedResult = Object.keys(unicModules)
+    .map((key) => {
+      return { ...unicModules[key] };
+    })
+    .sort((fi, se) => se.quantity_destroyed - fi.quantity_destroyed);
+  return sortedResult;
+}
+
 async function main() {
-  const losses = await getGoonLostShips();
-  const lossesQuantity = calculateItemsQuantity(losses);
+  const { shipList, modulesList } = await getGoonLoses();
+  const lossesQuantity = calculateItemsQuantity(shipList);
   const sortedLosses = sortQuantityData(lossesQuantity);
   const namedLosses = await applyNames(sortedLosses);
-  writeJsonToFile(namedLosses, new Date());
-  console.log(namedLosses);
+
+  const modulesLosses = await groupModulesByType(modulesList);
+  //writeJsonToFile(namedLosses, new Date());
+  writeJsonToFile(modulesLosses, "Module Losses");
+  console.log(modulesLosses);
+  //console.log(namedLosses);
 }
 main();
