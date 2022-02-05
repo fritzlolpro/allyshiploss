@@ -5,8 +5,8 @@ import { writeJsonToFile } from "./fileWriter.js";
 const baseApiUrl = "https://esi.evetech.net/latest";
 const killboardUrl = "https://zkillboard.com";
 const gsfId = "1354830081";
-//const pageLimit = Infinity;
-const pageLimit = 1;
+const pageLimit = Infinity;
+//const pageLimit = 1;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -101,6 +101,7 @@ async function getGoonLoses() {
 
 async function getItemInfo(itemId) {
   const url = `${baseApiUrl}/universe/types/${itemId}`;
+  console.log(`Getting info about ${itemId}`);
   const jsonFeed = await fetch(url)
     .then((bulk) => bulk.json())
     .catch((err) => console.error(err));
@@ -168,15 +169,16 @@ async function groupModulesByType(modulesList) {
 }
 
 async function main() {
+  console.log(new Date().toLocaleString())
   const { shipList, modulesList } = await getGoonLoses();
   const lossesQuantity = calculateItemsQuantity(shipList);
   const sortedLosses = sortQuantityData(lossesQuantity);
   const namedLosses = await applyNames(sortedLosses);
 
   const modulesLosses = await groupModulesByType(modulesList);
-  //writeJsonToFile(namedLosses, new Date());
-  writeJsonToFile(modulesLosses, "Module Losses");
-  console.log(modulesLosses);
+  writeJsonToFile(namedLosses, `Ship losses ${Date.now()}`);
+  writeJsonToFile(modulesLosses, `Module losses ${Date.now()}`);
+  //console.log(modulesLosses);
   //console.log(namedLosses);
 }
 main();
