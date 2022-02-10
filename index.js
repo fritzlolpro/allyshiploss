@@ -1,21 +1,21 @@
 import fetch from "node-fetch";
-
+import { fork } from "child_process";
 import { writeJsonToFile } from "./fileWriter.js";
-
+import { EventEmitter } from "events";
+import { zkbRequestParams, esiRequestParams } from "./requestParams.js";
 const baseApiUrl = "https://esi.evetech.net/latest";
 const killboardUrl = "https://zkillboard.com";
 const gsfId = "1354830081";
-const pageLimit = Infinity;
-//const pageLimit = 1;
-
+//const pageLimit = Infinity;
+const pageLimit = 1;
+EventEmitter.defaultMaxListeners = 1500;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const zkbRequestParams = {
-  headers: {
-    "Accept-Encoding": "gzip",
-    "User-Agent": "Maintainer: Fedor livsant123@gmail.com",
-  },
-};
+function isIterable(obj) {
+  if (obj == null) {
+    return false;
+  }
+  return typeof obj[Symbol.iterator] === "function";
+}
 
 async function getAllyLoses(allyId) {
   let jsonFeed = [];
@@ -26,11 +26,14 @@ async function getAllyLoses(allyId) {
     let data = {};
     try {
       const url = `${killboardUrl}/api/losses/allianceID/${allyId}/pastSeconds/604800/page/${pageNumber}/`;
+      //const start = Date.now();
       console.log("fetching page" + pageNumber, url);
       const result = await fetch(url, zkbRequestParams);
+      //const time = (Date.now() - start) / 1000;
+      //console.log(`Result for page ${pageNumber} in ${time}`);
       data = await result.json().catch((error) => {
         console.log(result);
-        throw new Error(`Error in to json in fpp: ${error}`);
+        data = {};
       });
     } catch (error) {
       console.error(error);
@@ -43,21 +46,24 @@ async function getAllyLoses(allyId) {
     if (result.length > 0) {
       jsonFeed = [...jsonFeed, ...result];
       page += 1;
-      if (page < pageLimit) {
+      if (page <= pageLimit) {
+        console.log(page);
         await refetch();
       }
     }
   };
-
   await refetch();
   return jsonFeed;
 }
 
-async function getKillmail(killId, killHash) {
-  const url = `${baseApiUrl}/killmails/${killId}/${killHash}`;
-  const result = await fetch(url);
-  const jsonFeed = await result.json();
-  return jsonFeed;
+async function getKillmail(killId, killHash, killEtag) {
+  const getKm = fork("./getKillmail.js", [killId, killHash, killEtag]);
+  const result = await new Promise((resolve, reject) => {
+    getKm.on("message", ({ jsonFeed, etag }) => {
+      resolve({ jsonFeed, etag });
+    });
+  });
+  return result;
 }
 
 function calculateItemsQuantity(items) {
@@ -86,11 +92,21 @@ async function getGoonLoses() {
   const killmailIds = loses.map((loss) => {
     return { id: loss.killmail_id, hash: loss.zkb.hash };
   });
+  console.log(`Will get ${killmailIds.length} killmails`);
+  let killEtag = null;
 
   const killList = await Promise.all(
-    killmailIds.map(async (killmail) => {
-      const kills = await getKillmail(killmail.id, killmail.hash);
-      return kills;
+    killmailIds.map(async (killmail, i) => {
+      const { jsonFeed, etag } = await getKillmail(
+        killmail.id,
+        killmail.hash,
+        killEtag
+      );
+      if (killEtag !== etag) {
+        killEtag = etag;
+      }
+      console.log(`Got killmail ${i} of ${killmailIds.length}`);
+      return jsonFeed;
     })
   );
 
@@ -100,16 +116,17 @@ async function getGoonLoses() {
 }
 
 async function getItemInfo(itemId) {
-  const url = `${baseApiUrl}/universe/types/${itemId}`;
-  console.log(`Getting info about ${itemId}`);
-  const jsonFeed = await fetch(url)
-    .then((bulk) => bulk.json())
-    .catch((err) => console.error(err));
-
-  return jsonFeed;
+  const getII = fork("./getItemInfo.js", [itemId]);
+  const result = await new Promise((resolve, reject) => {
+    getII.on("message", ({ jsonFeed }) => {
+      resolve({ jsonFeed });
+    });
+  });
+  return result;
 }
 
 async function applyNames(items) {
+  console.log(`Apply names to ${items.length} items`);
   const itemsWithNames = await Promise.all(
     items.map(async (item) => {
       const itemData = await getItemInfo(item.key);
@@ -125,7 +142,9 @@ async function applyNames(items) {
 
 async function groupModulesByType(modulesList) {
   const unicModules = {};
+  if (!isIterable(modulesList)) return {};
   for (const moduleBatch of modulesList) {
+    if (!isIterable(moduleBatch)) return {};
     for (const module of moduleBatch) {
       const modulesDropped = module.quantity_dropped
         ? module.quantity_dropped
@@ -169,7 +188,7 @@ async function groupModulesByType(modulesList) {
 }
 
 async function main() {
-  console.log(new Date().toLocaleString())
+  console.log(new Date().toLocaleString());
   const { shipList, modulesList } = await getGoonLoses();
   const lossesQuantity = calculateItemsQuantity(shipList);
   const sortedLosses = sortQuantityData(lossesQuantity);
@@ -178,7 +197,5 @@ async function main() {
   const modulesLosses = await groupModulesByType(modulesList);
   writeJsonToFile(namedLosses, `Ship losses ${Date.now()}`);
   writeJsonToFile(modulesLosses, `Module losses ${Date.now()}`);
-  //console.log(modulesLosses);
-  //console.log(namedLosses);
 }
 main();
