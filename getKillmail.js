@@ -31,6 +31,5 @@ async function get() {
     process.argv[4]
   );
   process.send({ jsonFeed, etag });
-  exit();
 }
 get();
