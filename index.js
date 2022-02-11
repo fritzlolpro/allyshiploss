@@ -1,20 +1,46 @@
 import fetch from "node-fetch";
 import { fork } from "child_process";
-import { writeJsonToFile } from "./fileWriter.js";
 import { EventEmitter } from "events";
+import yaml from "js-yaml";
+import { open } from "fs/promises";
+
 import { zkbRequestParams, esiRequestParams } from "./requestParams.js";
+import { writeJsonToFile } from "./fileWriter.js";
 const baseApiUrl = "https://esi.evetech.net/latest";
 const killboardUrl = "https://zkillboard.com";
 const gsfId = "1354830081";
-//const pageLimit = Infinity;
-const pageLimit = 1;
+const pageLimit = Infinity;
+//const pageLimit = 1;
 EventEmitter.defaultMaxListeners = 1500;
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function isIterable(obj) {
   if (obj == null) {
     return false;
   }
   return typeof obj[Symbol.iterator] === "function";
+}
+
+let itemDb = null;
+
+async function initItemsDb() {
+  console.log("INIT DB");
+  let filehandle;
+  try {
+    filehandle = await open("./sde/fsd/typeIDs.yaml");
+    const file = await filehandle.readFile("utf8");
+
+    itemDb = yaml.load(file);
+  } catch (e) {
+    console.log(e);
+  } finally {
+    await filehandle?.close();
+  }
+}
+
+async function getItemInfoFromDump(itemId) {
+  return itemDb[itemId];
 }
 
 async function getAllyLoses(allyId) {
@@ -114,14 +140,19 @@ async function getGoonLoses() {
   const modulesList = killList.map((kill) => kill?.victim?.items);
   return { shipList, modulesList };
 }
-
+let itemEtag = null;
 async function getItemInfo(itemId) {
-  const getII = fork("./getItemInfo.js", [itemId]);
-  const result = await new Promise((resolve, reject) => {
-    getII.on("message", ({ jsonFeed }) => {
-      resolve({ jsonFeed });
-    });
-  });
+  //  const getII = fork("./getItemInfo.js", [itemId, itemEtag]);
+  //  const result = await new Promise((resolve, reject) => {
+  //    getII.on("message", ({ jsonFeed, etag }) => {
+  //      if (itemEtag !== etag) {
+  //        itemEtag = etag;
+  //      }
+  //      resolve({ jsonFeed, etag });
+  //    });
+  //  });
+  console.log(typeof itemDb);
+  const result = await getItemInfoFromDump(itemId);
   return result;
 }
 
@@ -188,6 +219,10 @@ async function groupModulesByType(modulesList) {
 }
 
 async function main() {
+  if (!itemDb) {
+    await initItemsDb();
+  }
+
   console.log(new Date().toLocaleString());
   const { shipList, modulesList } = await getGoonLoses();
   const lossesQuantity = calculateItemsQuantity(shipList);

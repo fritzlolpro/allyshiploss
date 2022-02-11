@@ -1,5 +1,5 @@
 import fetch from "node-fetch";
-
+import { exit } from 'process';
 import { esiRequestParams } from "./requestParams.js";
 
 const baseApiUrl = "https://esi.evetech.net/latest";
@@ -31,5 +31,6 @@ async function get() {
     process.argv[4]
   );
   process.send({ jsonFeed, etag });
+  exit();
 }
 get();
