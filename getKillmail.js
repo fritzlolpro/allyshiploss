@@ -1,5 +1,4 @@
 import fetch from "node-fetch";
-import { exit } from 'process';
 import { esiRequestParams } from "./requestParams.js";
 
 const baseApiUrl = "https://esi.evetech.net/latest";
@@ -16,11 +15,11 @@ async function getKillmail(killId, killHash, killEtag) {
   const { etag } = result.headers;
   const jsonFeed = await result.json().catch((error) => {
     console.error(result, error);
-    jsonFeed = {};
+    return {};
   });
 
   const time = (Date.now() - start) / 1000;
-  console.log(`Ready killmail ${killId} in ${time}`);
+  //console.log(`Ready killmail ${killId} in ${time}`);
   return { jsonFeed, etag };
 }
 

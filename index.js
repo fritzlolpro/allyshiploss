@@ -9,8 +9,8 @@ import { writeJsonToFile } from "./fileWriter.js";
 const baseApiUrl = "https://esi.evetech.net/latest";
 const killboardUrl = "https://zkillboard.com";
 const gsfId = "1354830081";
-//const pageLimit = Infinity;
-const pageLimit = 1;
+const pageLimit = Infinity;
+//const pageLimit = 10;
 EventEmitter.defaultMaxListeners = 1500;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -64,7 +64,6 @@ async function getAllyLoses(allyId) {
     } catch (error) {
       console.error(error);
     }
-    console.log(data)
     return data;
   };
 
@@ -123,7 +122,7 @@ async function getGoonLoses() {
   let killEtag = null;
 
   let killList = [];
-  const limit = 2000;
+  const limit = 1000;
   const quantity = killmailIds.length;
   let itemsPerCycle = Math.min(limit, quantity);
   let itemsToSkip = 0;
@@ -140,32 +139,20 @@ async function getGoonLoses() {
           if (killEtag !== etag) {
             killEtag = etag;
           }
-          console.log(`Got killmail ${i} of ${killmailIds.length}`);
+          //console.log(`Got killmail ${i} of ${killmailIds.length}`);
           return jsonFeed;
         })
     );
-    console.log(query);
-    killList = [...killList, query];
+    killList = [...killList, ...query];
+    console.log(killList.length, quantity, itemsToSkip, itemsPerCycle);
     if (killList.length < quantity) {
+      itemsToSkip += itemsPerCycle;
       itemsPerCycle = Math.min(limit, Math.max(quantity - itemsPerCycle, 0));
+      await delay(1000);
       await getWithLimit();
     }
   }
   await getWithLimit();
-  // const killList = await Promise.all(
-  //   killmailIds.map(async (killmail, i) => {
-  //     const { jsonFeed, etag } = await getKillmail(
-  //       killmail.id,
-  //       killmail.hash,
-  //       killEtag
-  //     );
-  //     if (killEtag !== etag) {
-  //       killEtag = etag;
-  //     }
-  //     console.log(`Got killmail ${i} of ${killmailIds.length}`);
-  //     return jsonFeed;
-  //   })
-  // );
 
   const shipList = killList.map((kill) => kill?.victim?.ship_type_id);
   const modulesList = killList.map((kill) => kill?.victim?.items);
@@ -226,7 +213,7 @@ async function groupModulesByType(modulesList) {
 
       unicModules[item_type_id] = {
         item_type_id,
-        name,
+        name: name.en,
         quantity_destroyed: unicModules[item_type_id]
           ? unicModules[item_type_id].quantity_destroyed + modulesDestroyed
           : modulesDestroyed,
@@ -237,6 +224,9 @@ async function groupModulesByType(modulesList) {
           ? [...unicModules[item_type_id].positions, module.flag]
           : [module.flag],
       };
+      unicModules[item_type_id] = {
+        totalLossQuantiy: unicModules[item_type_id].quantity_dropped + unicModules[item_type_id].quantity_destroyed,
+      }
     }
   }
 
@@ -244,7 +234,7 @@ async function groupModulesByType(modulesList) {
     .map((key) => {
       return { ...unicModules[key] };
     })
-    .sort((fi, se) => se.quantity_destroyed - fi.quantity_destroyed);
+    .sort((fi, se) => se.totalLossQuantiy - fi.totalLossQuantiy);
   return sortedResult;
 }
 
