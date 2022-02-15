@@ -9,8 +9,8 @@ import { writeJsonToFile } from "./fileWriter.js";
 const baseApiUrl = "https://esi.evetech.net/latest";
 const killboardUrl = "https://zkillboard.com";
 const gsfId = "1354830081";
-const pageLimit = Infinity;
-//const pageLimit = 10;
+//const pageLimit = Infinity;
+const pageLimit = 1;
 EventEmitter.defaultMaxListeners = 1500;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -83,6 +83,10 @@ async function getAllyLoses(allyId) {
 }
 
 async function getKillmail(killId, killHash, killEtag) {
+  if (!killId || !killHash) {
+    console.error(`Incorrect getkillail input killId: ${killId} killHash: ${killHash}`);
+    return {};
+  }
   const getKm = fork("./getKillmail.js", [killId, killHash, killEtag]);
   const result = await new Promise((resolve, reject) => {
     getKm.on("message", ({ jsonFeed, etag }) => {
@@ -144,10 +148,10 @@ async function getGoonLoses() {
         })
     );
     killList = [...killList, ...query];
-    console.log(killList.length, quantity, itemsToSkip, itemsPerCycle);
     if (killList.length < quantity) {
       itemsToSkip += itemsPerCycle;
-      itemsPerCycle = Math.min(limit, Math.max(quantity - itemsPerCycle, 0));
+      itemsPerCycle = Math.min(limit, Math.max(quantity - itemsToSkip, 0));
+      console.log(killList.length, quantity, itemsToSkip, itemsPerCycle);
       await delay(1000);
       await getWithLimit();
     }
@@ -158,6 +162,7 @@ async function getGoonLoses() {
   const modulesList = killList.map((kill) => kill?.victim?.items);
   return { shipList, modulesList };
 }
+
 let itemEtag = null;
 async function getItemInfo(itemId) {
   //  const getII = fork("./getItemInfo.js", [itemId, itemEtag]);
@@ -178,7 +183,7 @@ async function applyNames(items) {
   const itemsWithNames = await Promise.all(
     items.map(async (item) => {
       const itemData = await getItemInfo(item.key);
-      const name = itemData.name;
+      const name = itemData?.name;
       return {
         ...item,
         name,
@@ -204,16 +209,16 @@ async function groupModulesByType(modulesList) {
 
       const { item_type_id } = module;
 
-      let name = unicModules[item_type_id]?.name;
+      let name = unicModules[item_type_id]?.name?.en;
 
       if (!name) {
         const itemData = await getItemInfo(item_type_id);
-        name = itemData?.name;
+        name = itemData?.name.en;
       }
 
       unicModules[item_type_id] = {
         item_type_id,
-        name: name.en,
+        name,
         quantity_destroyed: unicModules[item_type_id]
           ? unicModules[item_type_id].quantity_destroyed + modulesDestroyed
           : modulesDestroyed,
@@ -225,7 +230,9 @@ async function groupModulesByType(modulesList) {
           : [module.flag],
       };
       unicModules[item_type_id] = {
+        ...unicModules[item_type_id],
         totalLossQuantiy: unicModules[item_type_id].quantity_dropped + unicModules[item_type_id].quantity_destroyed,
+        positions: Array.from(new Set(unicModules[item_type_id].positions))
       }
     }
   }
