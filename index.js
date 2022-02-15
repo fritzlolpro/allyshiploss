@@ -9,8 +9,8 @@ import { writeJsonToFile } from "./fileWriter.js";
 const baseApiUrl = "https://esi.evetech.net/latest";
 const killboardUrl = "https://zkillboard.com";
 const gsfId = "1354830081";
-//const pageLimit = Infinity;
-const pageLimit = 1;
+const pageLimit = Infinity;
+//const pageLimit = 1;
 EventEmitter.defaultMaxListeners = 1500;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -84,7 +84,9 @@ async function getAllyLoses(allyId) {
 
 async function getKillmail(killId, killHash, killEtag) {
   if (!killId || !killHash) {
-    console.error(`Incorrect getkillail input killId: ${killId} killHash: ${killHash}`);
+    console.error(
+      `Incorrect getkillail input killId: ${killId} killHash: ${killHash}`
+    );
     return {};
   }
   const getKm = fork("./getKillmail.js", [killId, killHash, killEtag]);
@@ -183,7 +185,7 @@ async function applyNames(items) {
   const itemsWithNames = await Promise.all(
     items.map(async (item) => {
       const itemData = await getItemInfo(item.key);
-      const name = itemData?.name;
+      const name = itemData?.name.en;
       return {
         ...item,
         name,
@@ -195,9 +197,15 @@ async function applyNames(items) {
 
 async function groupModulesByType(modulesList) {
   const unicModules = {};
-  if (!isIterable(modulesList)) return {};
+  if (!isIterable(modulesList)) {
+    console.error(`modulesList not isIterable ${modulesList}`);
+    return {};
+  }
   for (const moduleBatch of modulesList) {
-    if (!isIterable(moduleBatch)) return {};
+    if (!isIterable(moduleBatch)) {
+      console.error(`moduleBatch not isIterable ${moduleBatch}`);
+      return {};
+    }
     for (const module of moduleBatch) {
       const modulesDropped = module.quantity_dropped
         ? module.quantity_dropped
@@ -231,9 +239,11 @@ async function groupModulesByType(modulesList) {
       };
       unicModules[item_type_id] = {
         ...unicModules[item_type_id],
-        totalLossQuantiy: unicModules[item_type_id].quantity_dropped + unicModules[item_type_id].quantity_destroyed,
-        positions: Array.from(new Set(unicModules[item_type_id].positions))
-      }
+        totalLossQuantiy:
+          unicModules[item_type_id].quantity_dropped +
+          unicModules[item_type_id].quantity_destroyed,
+        positions: Array.from(new Set(unicModules[item_type_id].positions)),
+      };
     }
   }
 
